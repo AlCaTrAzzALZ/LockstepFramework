@@ -4,18 +4,15 @@
 // (See accompanying file LICENSE or copy at
 // http://opensource.org/licenses/MIT)
 //=======================================================================
-
 using UnityEngine;
-using System.Collections; using FastCollections;
-using System;
-using Lockstep.Pathfinding;
+
 namespace Lockstep
 {
 	public class GridNode
 	{
 		#region Constructor
 
-		static GridNode ()
+		static GridNode()
 		{
 			/*for (i = -1; i <= 1; i++) {
 				for (j = -1; j <= 1; j++) {
@@ -28,35 +25,43 @@ namespace Lockstep
 			}*/
 		}
 
-		public GridNode ()
+		public GridNode()
 		{
 
 		}
 
-		public void Setup (int _x, int _y)
+		public void Setup(int _x, int _y)
 		{
+			if (_x < 0 || _y < 0)
+			{
+				Debug.LogError("Cannot be negative!");
+			}
 			gridX = _x;
 			gridY = _y;
-			gridIndex = GridManager.GetGridIndex (gridX, gridY);
+			gridIndex = GridManager.GetGridIndex(gridX, gridY);
 			WorldPos.x = gridX * FixedMath.One + GridManager.OffsetX;
 			WorldPos.y = gridY * FixedMath.One + GridManager.OffsetY;
 
 		}
 
-		public void Initialize ()
+		public void Initialize()
 		{
 
-			GenerateNeighbors ();
-			LinkedScanNode = GridManager.GetScanNode (gridX / GridManager.ScanResolution, gridY / GridManager.ScanResolution);
-			this.FastInitialize ();
+			GenerateNeighbors();
+			LinkedScanNode = GridManager.GetScanNode(gridX / GridManager.ScanResolution, gridY / GridManager.ScanResolution);
+			_clearanceDegree = DEFAULT_DEGREE;
+			_clearanceSource = DEFAULT_SOURCE;
+			this.FastInitialize();
 		}
 
-		public void FastInitialize ()
+		public void FastInitialize()
 		{
-			this.ClosedSetVersion = 0;
 			this.HeapIndex = 0;
 			this.HeapVersion = 0;
+			this.ClosedHeapVersion = 0;
 			this.GridVersion = 0;
+			this.CombinePathVersion = 0;
+			this._obstacleCount = 0;
 		}
 
 		#endregion
@@ -69,10 +74,13 @@ namespace Lockstep
 
 		#region Collection Helpers
 
-		public uint ClosedSetVersion;
 		public uint HeapVersion;
+		public uint ClosedHeapVersion;
 		public uint HeapIndex;
 
+		/// <summary>
+		/// TODO: Maybe it will be more efficient for memory to not cache this?
+		/// </summary>
 		public uint GridVersion;
 
 		#endregion
@@ -82,143 +90,172 @@ namespace Lockstep
 
 		public int gridX;
 		public int gridY;
-		public int gridIndex;
+		public uint gridIndex;
 
 		public int gCost;
 		public int hCost;
 		public int fCost;
 		public GridNode parent;
+		public GridNode combineTrailNode;
 		private byte _obstacleCount;
 
-		public byte ObstacleCount {
-			get {
+		public byte ObstacleCount
+		{
+			get
+			{
 
 				return _obstacleCount;
 			}
 		}
 
 
-		public bool Unwalkable {
-			get {
+		public bool Unwalkable
+		{
+			get
+			{
 				return _obstacleCount > 0;
 			}
 		}
 
-		private bool _clearance;
 
-		public bool Clearance {
-			get {
-				CheckUpdateValues ();
-				return _clearance;
-			}
-		}
+		private byte _clearanceSource;
+		internal byte ClearanceSource { get { return _clearanceSource; } }
+		private byte _clearanceDegree;
+		/// <summary>
+		/// How many connections until the closest unwalkable node.
+		/// If a big unit stands directly on this node, it won't be able to fit if the degree is too low.
+		/// </summary>
 
-		bool _extraClearanceObsolete;
-		private bool _extraClearnace;
-
-		public bool ExtraClearance {
-			get {
-				CheckUpdateValues();
-				if (_extraClearanceObsolete) {
-					UpdateExtraClearance ();
-				}
-				return _extraClearnace;
-			}
-		}
-
-		void CheckUpdateValues ()
+		public byte ClearanceDegree { get { return _clearanceDegree; } }
+		public byte GetClearanceDegree()
 		{
-			if (GridVersion != GridManager.GridVersion) {
-				UpdateValues ();
-			}
+			CheckUpdateValues();
+			return _clearanceDegree;
 		}
 
-		void UpdateExtraClearance ()
+		void CheckUpdateValues()
 		{
-			_extraClearanceObsolete = false;
-
-			if (Unwalkable) {
-				_extraClearnace = false;
-			} else {
-				_extraClearnace = true;
-				for (int i = 7; i >= 0; i--) {
-					var neighbor = NeighborNodes [i];
-					if (neighbor.IsNull () || !neighbor.Clearance) {
-						_extraClearnace = false;
-					}
-				}
+			if (GridVersion != GridManager.GridVersion)
+			{
+				UpdateValues();
 			}
 		}
-
-		void UpdateClearance ()
+		public const byte DEFAULT_DEGREE = byte.MaxValue;
+		public const byte DEFAULT_SOURCE = byte.MaxValue;
+		void UpdateClearance()
 		{
-			if (Unwalkable) {
-				_clearance = false;
-			} else {
-				_clearance = true;
-				//backward looping is faster
-
-				for (int i = 7; i >= 0; i--) {
-					var neighbor = NeighborNodes [i];
-					if (neighbor.IsNull () || neighbor.Unwalkable) {
-						_clearance = false;
-					}
-				}
+			if (Unwalkable)
+			{
+				_clearanceDegree = 0;
+				_clearanceSource = DEFAULT_SOURCE;
 			}
+			else
+			{
+				if (_clearanceSource <= 7)
+				{
+
+					//refresh source in case the map changed
+					var source = NeighborNodes[_clearanceSource];
+                    if (source.IsNull() == false)
+                    {
+                        var prevSourceDegree = source.ClearanceDegree;
+                        if (source.ClearanceDegree < _clearanceDegree)
+                        {
+                            source.UpdateValues();
+                            //Clearance from source can no longer be trusted!
+                            if (source.ClearanceDegree != prevSourceDegree)
+                            {
+                                _clearanceDegree = DEFAULT_DEGREE;
+                                _clearanceSource = DEFAULT_SOURCE;
+                            }
+                        }
+                        else
+                        {
+                            _clearanceDegree = (byte)(source.ClearanceDegree + 1);
+                        }
+                    }
+                }
+                //This method isn't always 100% accurate but after several updates, it will have a better picture of the map
+                //Clarification: _clearanceSource is the source of a blockage. It's cached so that when the map is changed, the source of the major block can be rechecked for changes.
+                //TODO: Test this thoroughly and visualize
+                for (int i = 7; i >= 0; i--)
+                {
+                    var neighbor = (NeighborNodes[i]);
+                    if (neighbor.IsNull() || neighbor.Unwalkable)
+                    {
+                        _clearanceDegree = 1;
+                        _clearanceSource = (byte)i;
+                        break;
+                    }
+                    //Cap clearance to 8. Something larger than that won't work very well with pathfinding.
+                    if (neighbor._clearanceDegree < ClearanceDegree && neighbor._clearanceDegree < 8)
+                    {
+                        _clearanceDegree = (byte)(neighbor._clearanceDegree + 1);
+                        _clearanceSource = (byte)i;
+                    }
+                }
+            }
 		}
 
-		void UpdateValues ()
+
+        /// <summary>
+        /// Returns true if clearance degree changed.
+        /// </summary>
+        /// <returns></returns>
+		void UpdateValues()
 		{
 			GridVersion = GridManager.GridVersion;
 
 			//fast enough to just do it
 			UpdateClearance();
-
-			_extraClearanceObsolete = true;
 		}
 
-        #region CombinePath
-        //This is the system used for groups of pathfinding queries to the same destination
-        //If query 2 finds its way onto a node on the first query, it will use the rest of the first query
-        public uint CombinePathVersion;
-        #endregion
-        static int CachedUnpassableCheckSize;
+		#region CombinePath
+		//This is the system used for groups of pathfinding queries to the same destination
+		//If query 2 finds its way onto a node on the first query, it will use the rest of the first query
+		public ulong CombinePathVersion;
+		#endregion
+		static int CachedUnpassableCheckSize;
 
-		internal static void PrepareUnpassableCheck (int size)
+		internal static void PrepareUnpassableCheck(int size)
 		{
 			CachedUnpassableCheckSize = size;
 		}
 
-		internal bool Unpassable ()
+		/// <summary>
+		/// If this unit is too fat to fit.
+		/// </summary>
+		internal bool Unpassable()
 		{
-			if (CachedUnpassableCheckSize > Pathfinder.SmallSize) {
-				if (CachedUnpassableCheckSize > Pathfinder.MediumSize) {
-					return !ExtraClearance;
-				}
-				return !Clearance;
+			if (true)
+			{//CachedUnpassableCheckSize) {
+			 //If there's an unwalkable within the size's number of connections, the unit cannot pass
+				return GetClearanceDegree() < CachedUnpassableCheckSize;
 			}
 			return Unwalkable;
 
 		}
 
-		public void AddObstacle ()
+		public void AddObstacle()
 		{
-			#if DEBUG
-			if (this._obstacleCount == byte.MaxValue) {
-				Debug.LogErrorFormat ("Too many obstacles on this node ({0})!", new Coordinate (this.gridX, this.gridY));
+#if DEBUG
+			if (this._obstacleCount == byte.MaxValue)
+			{
+				Debug.LogErrorFormat("Too many obstacles on this node ({0})!", new Coordinate(this.gridX, this.gridY));
 			}
-			#endif
+#endif
 			this._obstacleCount++;
-			GridManager.NotifyGridChanged ();
+			GridManager.NotifyGridChanged();
 		}
 
-		public void RemoveObstacle ()
+		public void RemoveObstacle()
 		{
-			if (this._obstacleCount == 0) {
-				Debug.LogErrorFormat ("No obstacle to remove on this node ({0})!", new Coordinate (this.gridX, this.gridY));
+			if (this._obstacleCount == 0)
+			{
+				Debug.LogErrorFormat("No obstacle to remove on this node ({0})!", new Coordinate(this.gridX, this.gridY));
 			}
 			this._obstacleCount--;
-			GridManager.NotifyGridChanged ();
+			GridManager.NotifyGridChanged();
 		}
 
 
@@ -229,7 +266,7 @@ namespace Lockstep
 		public GridNode[] NeighborNodes = new GridNode[8];
 		public Vector2d WorldPos;
 
-		private void GenerateNeighbors ()
+		private void GenerateNeighbors()
 		{
 			//0-3 = sides, 4-7 = diagonals
 			//0 = (-1, 0)
@@ -243,31 +280,39 @@ namespace Lockstep
 			int sideIndex = 0;
 			int diagonalIndex = 4; //I learned how to spell [s]diagnal[/s] diagonal!!!
 
-			for (i = -1; i <= 1; i++) {
+			for (i = -1; i <= 1; i++)
+			{
 				checkX = gridX + i;
 
-				for (j = -1; j <= 1; j++) {
+				for (j = -1; j <= 1; j++)
+				{
 					if (i == 0 && j == 0) //Don't do anything for the same node
-                        continue;
+						continue;
 					checkY = gridY + j;
-					if (GridManager.ValidateCoordinates (checkX, checkY)) {
+					if (GridManager.ValidateCoordinates(checkX, checkY))
+					{
 						int neighborIndex;
-						if ((i != 0 && j != 0)) {
+						if ((i != 0 && j != 0))
+						{
 							//Diagonal
-							if (GridManager.UseDiagonalConnections) {
+							if (GridManager.UseDiagonalConnections)
+							{
 								neighborIndex = diagonalIndex++;
-							} else
+							}
+							else
 								continue;
-						} else {
+						}
+						else
+						{
 							neighborIndex = sideIndex++;
 						}
-						GridNode checkNode = GridManager.Grid [GridManager.GetGridIndex (checkX, checkY)];
-						NeighborNodes [neighborIndex] = checkNode;
+						GridNode checkNode = GridManager.Grid[GridManager.GetGridIndex(checkX, checkY)];
+						NeighborNodes[neighborIndex] = checkNode;
 					}
 				}
 			}
-			
-			
+
+
 		}
 
 		static int dstX;
@@ -275,11 +320,11 @@ namespace Lockstep
 		public static int HeuristicTargetX;
 		public static int HeuristicTargetY;
 
-		public void CalculateHeuristic ()
+		public void CalculateHeuristic()
 		{
 
 
-			#if true
+#if true
 			//manhattan
 			if (gridX > HeuristicTargetX)
 				dstX = gridX - HeuristicTargetX;
@@ -291,7 +336,7 @@ namespace Lockstep
 				dstY = HeuristicTargetY - gridY;
 
 			hCost = (dstX + dstY) * 100;
-			#elif true
+#elif true
 			//octile
 			if (gridX > HeuristicTargetX)
 				dstX = gridX - HeuristicTargetX;
@@ -318,7 +363,7 @@ namespace Lockstep
 #endif
 
 			fCost = gCost + hCost;
-			
+
 		}
 
 		#endregion
@@ -332,33 +377,34 @@ namespace Lockstep
 
 		public ScanNode LinkedScanNode;
 
-		public void Add (LSInfluencer influencer)
+		public void Add(LSInfluencer influencer)
 		{
-			LinkedScanNode.Add (influencer);
+			LinkedScanNode.Add(influencer);
 		}
 
-		public void Remove (LSInfluencer influencer)
+		public void Remove(LSInfluencer influencer)
 		{
-			LinkedScanNode.Remove (influencer);
+			LinkedScanNode.Remove(influencer);
 		}
 
 		#endregion
 
+        //TODO: Get rid of static microoptimization
 		static int i, j, checkX, checkY, leIndex;
 
-		public override int GetHashCode ()
+		public override int GetHashCode()
 		{
-			return this.gridIndex;
+			return (int)this.gridIndex;
 		}
 
-		public bool DoesEqual (GridNode obj)
+		public bool DoesEqual(GridNode obj)
 		{
 			return obj.gridIndex == this.gridIndex;
 		}
 
-		public override string ToString ()
+		public override string ToString()
 		{
-			return "(" + gridX.ToString () + ", " + gridY.ToString () + ")";
+			return "(" + gridX.ToString() + ", " + gridY.ToString() + ")";
 		}
 	}
 }

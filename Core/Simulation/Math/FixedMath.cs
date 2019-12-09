@@ -8,7 +8,8 @@
 #define HIGH_ACCURACY
 
 using UnityEngine;
-using System.Collections; using FastCollections;
+using System.Collections;
+using FastCollections;
 using System;
 
 namespace Lockstep
@@ -28,7 +29,6 @@ namespace Lockstep
 		public const long MaxFixedNumber = long.MaxValue >> SHIFT_AMOUNT;
 		public const long TenDegrees = FixedMath.One * 1736 / 10000;
 		public const long Epsilon = 1 << (SHIFT_AMOUNT - 10);
-
 		#endregion
 
 		#region Constructors
@@ -204,7 +204,8 @@ namespace Lockstep
 			{
 				return -f1 > f2;
 			}
-			else {
+			else
+			{
 				return f1 > f2;
 			}
 		}
@@ -215,7 +216,8 @@ namespace Lockstep
 			{
 				return -f1 < f2;
 			}
-			else {
+			else
+			{
 				return f1 < f2;
 			}
 		}
@@ -301,7 +303,7 @@ namespace Lockstep
 
 		public static bool MoreThanEpsilon(this long f1)
 		{
-			return f1 > Epsilon || f1 < Epsilon;
+			return f1 > Epsilon || f1 < -Epsilon;
 		}
 
 		public static long MoveTowards(long from, long to, long maxAmount)
@@ -321,20 +323,20 @@ namespace Lockstep
 			return from;
 		}
 
-        /// <summary>
-        /// Clamps between -1 and 1 inclusive
-        /// </summary>
-        /// <param name="f1"></param>
-        /// <returns></returns>
-        public static long ClampOne (this long f1)
-        {
-            if (f1 > FixedMath.One)
-                return FixedMath.One;
-            if (f1 < -FixedMath.One)
-                return -FixedMath.One;
-            return f1;
-        }
-        
+		/// <summary>
+		/// Clamps between -1 and 1 inclusive
+		/// </summary>
+		/// <param name="f1"></param>
+		/// <returns></returns>
+		public static long ClampOne(this long f1)
+		{
+			if (f1 > FixedMath.One)
+				return FixedMath.One;
+			if (f1 < -FixedMath.One)
+				return -FixedMath.One;
+			return f1;
+		}
+
 		public static long Normalized(this long f1, long range)
 		{
 			while (f1 < 0)
@@ -364,7 +366,7 @@ namespace Lockstep
 
 		public static int RoundToInt(this long f1)
 		{
-            //Works with negatives!
+			//Works with negatives!
 			return (int)((f1 + Half - 1) >> SHIFT_AMOUNT);
 		}
 

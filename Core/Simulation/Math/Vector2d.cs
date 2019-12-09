@@ -1,7 +1,5 @@
 using UnityEngine;
-using System.Collections; using FastCollections;
 using System;
-
 
 namespace Lockstep
 {
@@ -10,9 +8,9 @@ namespace Lockstep
 	{
 		[FixedNumber]
 		public long x;
+		
 		[FixedNumber]
 		public long y;
-
 
 		#region Constructors
 
@@ -91,6 +89,10 @@ namespace Lockstep
 			return FixedMath.Sqrt(temp1);
 		}
 
+		/// <summary>
+		/// Unnormalized square magnitude used for comparisons.
+		/// </summary>
+		/// <returns>The magnitude.</returns>
 		public long FastMagnitude()
 		{
 			return this.x * this.x + this.y * this.y;
@@ -300,7 +302,7 @@ namespace Lockstep
 		}
 
 		/// <summary>
-		/// Returns a value that is greater if the distance is greater.
+		/// Does not normalize the calculations to fixed-point numbers. Can be used for distance comparisons but scales quadratically.
 		/// </summary>
 		/// <returns>The FastDistance.</returns>
 		public long FastDistance(long otherX, long otherY)
@@ -319,6 +321,18 @@ namespace Lockstep
 			temp2 *= temp2;
 			return (temp1 + temp2);
 		}
+		/// <summary>
+		/// Are all components of this vector equal to zero?
+		/// </summary>
+		/// <returns></returns>
+		public bool EqualsZero()
+		{
+			return x == 0 && y == 0;
+		}
+		/// <summary>
+		/// Used for rotation vectors that aren't exact
+		/// </summary>
+		/// <returns></returns>
 		public bool NotZero()
 		{
 			return x.MoreThanEpsilon() || y.MoreThanEpsilon();
@@ -328,7 +342,7 @@ namespace Lockstep
 
 		#region Static Math
 
-		public static readonly Vector2d defaultRotation = new Vector2d(1,0);
+		public static readonly Vector2d defaultRotation = new Vector2d(1, 0);
 		public static readonly Vector2d up = new Vector2d(0, 1);
 		public static readonly Vector2d right = new Vector2d(1, 0);
 		public static readonly Vector2d down = new Vector2d(0, -1);
@@ -394,11 +408,11 @@ namespace Lockstep
 		public override string ToString()
 		{
 			return (
-			        "(" +
-			        Math.Round(FixedMath.ToDouble(this.x), 2, MidpointRounding.AwayFromZero).ToString() +
-			        ", " +
-			        Math.Round(FixedMath.ToDouble(this.y), 2, MidpointRounding.AwayFromZero) +
-			        ")"
+					"(" +
+					Math.Round(FixedMath.ToDouble(this.x), 2, MidpointRounding.AwayFromZero).ToString() +
+					", " +
+					Math.Round(FixedMath.ToDouble(this.y), 2, MidpointRounding.AwayFromZero) +
+					")"
 			);
 		}
 
